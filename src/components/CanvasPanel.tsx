@@ -1,5 +1,5 @@
 import { useRef, useEffect, useImperativeHandle, forwardRef, useState } from 'react';
-import { Canvas, Circle, Rect, Triangle, Ellipse, Text } from 'fabric';
+import { Canvas, Circle, Rect, Triangle, Ellipse, Text, Line, Polygon } from 'fabric';
 import type { CreateShapeArgs, ModifyShapeArgs, CanvasObjectInfo } from '@/types/drawing';
 
 // ============ 颜色映射 ============
@@ -119,11 +119,12 @@ export const CanvasPanel = forwardRef<CanvasPanelRef>((_props, ref) => {
         stroke: args.stroke_color ? resolveColor(args.stroke_color) : undefined,
         strokeWidth: args.stroke_color ? 2 : 0,
         customId: id,
+        groupId: args.group_id || '',
         selectable: false,
         evented: false,
       };
 
-      let obj: Circle | Rect | Triangle | Ellipse | Text | null = null;
+      let obj: Circle | Rect | Triangle | Ellipse | Text | Line | Polygon | null = null;
 
       switch (args.shape_type) {
         case 'circle':
@@ -143,6 +144,46 @@ export const CanvasPanel = forwardRef<CanvasPanelRef>((_props, ref) => {
         case 'ellipse':
           obj = new Ellipse({ ...commonProps, rx: size * 1.3, ry: size * 0.8 });
           break;
+        case 'line': {
+          // 线段：使用 start/end 坐标或默认在 center 附近画水平线
+          const sw = sizeRef.current.w;
+          const sh = sizeRef.current.h;
+          const x1 = args.start_x != null ? (args.start_x / 800) * sw : x - size;
+          const y1 = args.start_y != null ? (args.start_y / 600) * sh : y;
+          const x2 = args.end_x != null ? (args.end_x / 800) * sw : x + size;
+          const y2 = args.end_y != null ? (args.end_y / 600) * sh : y;
+          const lineColor = args.stroke_color ? resolveColor(args.stroke_color) : color;
+          obj = new Line([x1, y1, x2, y2], {
+            stroke: lineColor,
+            strokeWidth: args.stroke_width || 3,
+            customId: id,
+            groupId: args.group_id || '',
+            selectable: false,
+            evented: false,
+          });
+          break;
+        }
+        case 'star': {
+          // 五角星：计算 10 个顶点（5 个外点 + 5 个内点交替）
+          const points: { x: number; y: number }[] = [];
+          const outerR = size;
+          const innerR = size * 0.382;
+          const points_count = 5;
+          for (let i = 0; i < points_count * 2; i++) {
+            const r = i % 2 === 0 ? outerR : innerR;
+            const angle = (Math.PI / points_count) * i - Math.PI / 2;
+            points.push({
+              x: r * Math.cos(angle),
+              y: r * Math.sin(angle),
+            });
+          }
+          obj = new Polygon(points, {
+            ...commonProps,
+            originX: 'center',
+            originY: 'center',
+          });
+          break;
+        }
         default:
           obj = new Circle({ ...commonProps, radius: size });
       }
@@ -219,15 +260,27 @@ export const CanvasPanel = forwardRef<CanvasPanelRef>((_props, ref) => {
         } else if (obj.type === 'ellipse') {
           type = 'ellipse';
           size = Math.max(obj.rx || 0, obj.ry || 0);
+        } else if (obj.type === 'line') {
+          type = 'line';
+          size = Math.round(Math.sqrt(
+            Math.pow((obj.x2 || 0) - (obj.x1 || 0), 2) +
+            Math.pow((obj.y2 || 0) - (obj.y1 || 0), 2)
+          ));
+        } else if (obj.type === 'polygon') {
+          type = 'star';
+          size = Math.round(Math.max(
+            ...(obj.points || []).map((p: { x: number; y: number }) => Math.sqrt(p.x * p.x + p.y * p.y))
+          ));
         }
 
         return {
           id: obj.customId || '',
           type,
-          color: obj.fill || '#333333',
+          color: obj.fill || obj.stroke || '#333333',
           x: Math.round((obj.left / w) * 800),
           y: Math.round((obj.top / h) * 600),
           size: Math.round(size),
+          group_id: obj.groupId || undefined,
         };
       });
     },
