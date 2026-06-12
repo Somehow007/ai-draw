@@ -1,6 +1,6 @@
 // ============ 绘图相关类型 ============
 
-export type ShapeType = 'circle' | 'rectangle' | 'square' | 'triangle' | 'ellipse' | 'line' | 'arrow';
+export type ShapeType = 'circle' | 'rectangle' | 'square' | 'triangle' | 'ellipse' | 'line' | 'star' | 'arrow';
 
 export type SemanticPosition =
   | 'center'
@@ -35,7 +35,15 @@ export interface CreateShapeArgs {
   center_y?: number;
   size?: number;
   stroke_color?: string;
+  stroke_width?: number;
   opacity?: number;
+  // 线段专用参数
+  start_x?: number;
+  start_y?: number;
+  end_x?: number;
+  end_y?: number;
+  // 复合图形分组 ID（同一复合对象的子图形共享 group_id）
+  group_id?: string;
 }
 
 export interface ModifyShapeArgs {
@@ -65,6 +73,7 @@ export interface CanvasObjectInfo {
   x: number;
   y: number;
   size: number;
+  group_id?: string;
 }
 
 // ============ 语音相关类型 ============

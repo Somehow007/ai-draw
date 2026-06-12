@@ -16,19 +16,19 @@ const providers: LLMProvider[] = [
   {
     name: 'DeepSeek',
     apiKey: import.meta.env.VITE_DEEPSEEK_API_KEY || '',
-    baseUrl: '/api/llm/deepseek',
+    baseUrl: `${window.location.origin}/api/llm/deepseek`,
     model: 'deepseek-chat',
   },
   {
     name: 'Qwen',
     apiKey: import.meta.env.VITE_QWEN_API_KEY || '',
-    baseUrl: '/api/llm/qwen',
+    baseUrl: `${window.location.origin}/api/llm/qwen`,
     model: 'qwen-max',
   },
   {
     name: 'Zhipu',
     apiKey: import.meta.env.VITE_ZHIPU_API_KEY || '',
-    baseUrl: '/api/llm/zhipu',
+    baseUrl: `${window.location.origin}/api/llm/zhipu`,
     model: 'glm-4-flash',
   },
 ];
@@ -87,45 +87,69 @@ export const llmService = new LLMService();
 
 /**
  * Function Calling 工具定义
- * Phase 1 使用，Phase 0 预留
+ * Phase 1 使用
  */
 export const drawingTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
       name: 'create_shape',
-      description: '在画布上创建一个新的图形',
+      description: '在画布上创建一个新的图形。对于复合对象（如房子、花朵、太阳），分解为多个基本图形并多次调用此工具，所有子图形使用相同的 group_id。',
       parameters: {
         type: 'object',
         properties: {
           shape_type: {
             type: 'string',
-            enum: ['circle', 'rectangle', 'square', 'triangle', 'ellipse', 'line', 'arrow'],
-            description: '图形类型',
+            enum: ['circle', 'rectangle', 'square', 'triangle', 'ellipse', 'line', 'star'],
+            description: '图形类型。circle=圆形, rectangle=矩形, square=正方形, triangle=三角形, ellipse=椭圆, line=线段, star=五角星',
           },
           color: {
             type: 'string',
-            description: '填充颜色，如 "red", "#FF5733"',
+            description: '填充颜色，如 "red", "#FF5733", "蓝色"。线段类型此参数无效，用 stroke_color。',
           },
           center_x: {
             type: 'number',
-            description: '中心点 x 坐标（0-800）',
+            description: '中心点 x 坐标（0-800 逻辑坐标系）',
           },
           center_y: {
             type: 'number',
-            description: '中心点 y 坐标（0-600）',
+            description: '中心点 y 坐标（0-600 逻辑坐标系）',
           },
           size: {
             type: 'number',
-            description: '尺寸（圆形=半径，矩形=边长），默认 100',
+            description: '尺寸（圆形=半径，矩形=边长，星形=外径），默认 80。"大"=120，"小"=50',
           },
           stroke_color: {
             type: 'string',
-            description: '边框颜色',
+            description: '边框颜色（可选）。对 line 类型来说是线段颜色。',
+          },
+          stroke_width: {
+            type: 'number',
+            description: '边框/线段宽度（可选，默认 2，线段默认 3）',
           },
           opacity: {
             type: 'number',
             description: '透明度 0-1，默认 1',
+          },
+          start_x: {
+            type: 'number',
+            description: '线段起点 x 坐标（仅 line 类型使用）',
+          },
+          start_y: {
+            type: 'number',
+            description: '线段起点 y 坐标（仅 line 类型使用）',
+          },
+          end_x: {
+            type: 'number',
+            description: '线段终点 x 坐标（仅 line 类型使用）',
+          },
+          end_y: {
+            type: 'number',
+            description: '线段终点 y 坐标（仅 line 类型使用）',
+          },
+          group_id: {
+            type: 'string',
+            description: '分组 ID，用于复合对象。同一复合对象的所有子图形使用相同的 group_id（如 "house_1", "flower_1"）',
           },
         },
         required: ['shape_type'],
