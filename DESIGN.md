@@ -404,17 +404,20 @@ ai-draw/
 - L1 指令实际测试验证（成功率 > 90%）
 - 端到端延迟测试（目标 < 3 秒）
 
-### Phase 2：智能增强（2-3 天）
+### Phase 2：智能增强（2-3 天）✅ 已完成
 
 **目标**：支持复合指令和空间关系推理。
 
-**具体工作**：
-- 复合指令拆解：一句话多操作
-- 空间关系指令：相对定位
-- 查询指令：画布状态查询
-- 目标确认机制
-- 指令历史面板
-- 绘图执行动画
+**已完成工作**：
+- ✅ 空间关系指令推理（"在圆形右边画矩形"、"排成一排"等相对定位）
+- ✅ 查询指令完善：count / largest / smallest / colors / by_type 五种查询类型
+- ✅ 目标确认机制：破坏性操作（清空画布、批量删除）的语音+按钮二次确认，15秒超时自动取消
+- ✅ 批量删除支持：delete_shape 工具新增 filter_type / filter_color / all 过滤参数
+- ✅ 绘图入场动画：图形创建时 scale 从 0 到 1 的 easeOutCubic 动画，线段使用 opacity 淡入
+- ✅ TTS 语音反馈：查询结果语音播报、确认提示语音播报、错误提示语音播报
+- ✅ 指令类型追踪：指令历史显示真实命令类型（create_shape / modify_shape / composite 等）
+- ✅ 画布状态增强：getCanvasState 返回 width/height 信息，辅助 LLM 空间推理
+- ✅ 新增 CanvasPanel 方法：getLargestShape / getSmallestShape / getShapesByType / getCanvasSize
 
 **验收标准**：
 - 复合指令正确拆解并依次执行

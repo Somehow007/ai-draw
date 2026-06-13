@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 
 /**
  * LLM 服务提供商配置
- * Phase 0 阶段仅作为占位，Phase 1 接入实际调用
+ * 多模型故障转移：DeepSeek → Qwen → Zhipu
  */
 
 interface LLMProvider {
@@ -34,10 +34,6 @@ const providers: LLMProvider[] = [
 ];
 
 class LLMService {
-  /**
-   * 多模型故障转移调用
-   * 按优先级依次尝试: DeepSeek → Qwen → Zhipu
-   */
   async callWithFailover(
     messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
     tools?: OpenAI.Chat.Completions.ChatCompletionTool[],
@@ -75,9 +71,6 @@ class LLMService {
     throw new Error(`所有模型提供商均不可用:\n${errors.join('\n')}`);
   }
 
-  /**
-   * 获取当前可用的提供商列表（用于 UI 展示）
-   */
   getAvailableProviders(): string[] {
     return providers.filter((p) => !!p.apiKey).map((p) => p.name);
   }
@@ -87,7 +80,7 @@ export const llmService = new LLMService();
 
 /**
  * Function Calling 工具定义
- * Phase 1 使用
+ * Phase 2：增强 delete_shape 支持过滤条件，增强 query_canvas 描述
  */
 export const drawingTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -183,16 +176,27 @@ export const drawingTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'delete_shape',
-      description: '删除画布上的图形',
+      description: '删除画布上的图形。支持三种方式：1) 指定 target_id 删除单个图形；2) 指定 filter_type 和/或 filter_color 删除匹配的所有图形（需用户确认）；3) 设置 all=true 删除所有图形（需用户确认）。',
       parameters: {
         type: 'object',
         properties: {
           target_id: {
             type: 'string',
-            description: '目标图形的 ID',
+            description: '目标图形的 ID（删除单个特定图形时使用）',
+          },
+          filter_type: {
+            type: 'string',
+            description: '按形状类型筛选删除，如 "circle", "rectangle", "triangle"。仅当不按特定 ID 删除时使用。',
+          },
+          filter_color: {
+            type: 'string',
+            description: '按颜色筛选删除，如 "red", "#FF0000"。仅当不按特定 ID 删除时使用。',
+          },
+          all: {
+            type: 'boolean',
+            description: '设为 true 时删除画布上所有图形（与 clear_canvas 类似，需用户确认）',
           },
         },
-        required: ['target_id'],
       },
     },
   },
@@ -200,7 +204,7 @@ export const drawingTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'clear_canvas',
-      description: '清空画布上的所有图形',
+      description: '清空画布上的所有图形（此操作需要用户确认）',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -208,14 +212,18 @@ export const drawingTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'query_canvas',
-      description: '查询画布状态信息',
+      description: '查询画布状态信息。返回结果会通过语音播报给用户。',
       parameters: {
         type: 'object',
         properties: {
           query_type: {
             type: 'string',
             enum: ['count', 'largest', 'smallest', 'colors', 'by_type'],
-            description: '查询类型',
+            description: '查询类型。count=图形总数, largest=最大图形, smallest=最小图形, colors=所有颜色列表, by_type=按类型统计数量',
+          },
+          shape_type: {
+            type: 'string',
+            description: '仅当 query_type 为 by_type 时使用，指定要统计的形状类型',
           },
         },
         required: ['query_type'],

@@ -37,12 +37,10 @@ export interface CreateShapeArgs {
   stroke_color?: string;
   stroke_width?: number;
   opacity?: number;
-  // 线段专用参数
   start_x?: number;
   start_y?: number;
   end_x?: number;
   end_y?: number;
-  // 复合图形分组 ID（同一复合对象的子图形共享 group_id）
   group_id?: string;
 }
 
@@ -57,11 +55,15 @@ export interface ModifyShapeArgs {
 }
 
 export interface DeleteShapeArgs {
-  target_id: string;
+  target_id?: string;
+  filter_type?: string;
+  filter_color?: string;
+  all?: boolean;
 }
 
 export interface QueryCanvasArgs {
   query_type: 'count' | 'largest' | 'smallest' | 'colors' | 'by_type';
+  shape_type?: string;
 }
 
 // ============ 画布状态（用于 LLM 上下文注入）============
@@ -73,18 +75,28 @@ export interface CanvasObjectInfo {
   x: number;
   y: number;
   size: number;
+  width?: number;
+  height?: number;
   group_id?: string;
+}
+
+// ============ 确认机制 ============
+
+export interface ConfirmAction {
+  type: 'clear_canvas' | 'delete_multiple';
+  details: string;
+  toolCalls?: Array<{ function: { name: string; arguments: string } }>;
 }
 
 // ============ 语音相关类型 ============
 
-export type VoiceState = 'idle' | 'listening' | 'processing' | 'executing' | 'error';
+export type VoiceState = 'idle' | 'listening' | 'processing' | 'executing' | 'confirming' | 'error';
 
 export interface CommandRecord {
   id: string;
   userInput: string;
   systemUnderstanding: string;
-  commandType: CommandType | 'unknown';
+  commandType: string;
   success: boolean;
   timestamp: number;
 }

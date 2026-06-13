@@ -1,5 +1,5 @@
 import { useRef, useEffect, useImperativeHandle, forwardRef, useState } from 'react';
-import { Canvas, Circle, Rect, Triangle, Ellipse, Text, Line, Polygon } from 'fabric';
+import { Canvas, Circle, Rect, Triangle, Ellipse, Text, Line, Polygon, util } from 'fabric';
 import type { CreateShapeArgs, ModifyShapeArgs, CanvasObjectInfo } from '@/types/drawing';
 
 // ============ 颜色映射 ============
@@ -46,6 +46,10 @@ export interface CanvasPanelRef {
   getCanvasState: () => CanvasObjectInfo[];
   getCanvasJSON: () => object;
   getObjectCount: () => number;
+  getCanvasSize: () => { w: number; h: number };
+  getLargestShape: () => CanvasObjectInfo | null;
+  getSmallestShape: () => CanvasObjectInfo | null;
+  getShapesByType: (type: string) => CanvasObjectInfo[];
   undo: () => void;
 }
 
@@ -145,7 +149,6 @@ export const CanvasPanel = forwardRef<CanvasPanelRef>((_props, ref) => {
           obj = new Ellipse({ ...commonProps, rx: size * 1.3, ry: size * 0.8 });
           break;
         case 'line': {
-          // 线段：使用 start/end 坐标或默认在 center 附近画水平线
           const sw = sizeRef.current.w;
           const sh = sizeRef.current.h;
           const x1 = args.start_x != null ? (args.start_x / 800) * sw : x - size;
@@ -164,7 +167,6 @@ export const CanvasPanel = forwardRef<CanvasPanelRef>((_props, ref) => {
           break;
         }
         case 'star': {
-          // 五角星：计算 10 个顶点（5 个外点 + 5 个内点交替）
           const points: { x: number; y: number }[] = [];
           const outerR = size;
           const innerR = size * 0.382;
@@ -189,7 +191,39 @@ export const CanvasPanel = forwardRef<CanvasPanelRef>((_props, ref) => {
       }
 
       if (obj) {
+        // 入场动画：从 0 缩放到 1
+        if (obj.type !== 'line') {
+          obj.set({ scaleX: 0.001, scaleY: 0.001 });
+        } else {
+          obj.set('opacity', 0);
+        }
         canvas.add(obj);
+
+        if (obj.type !== 'line') {
+          util.animate({
+            from: 0.001,
+            to: 1,
+            duration: 300,
+            ease: util.ease.easeOutCubic,
+            onChange: (val: number) => {
+              obj.set({ scaleX: val, scaleY: val });
+              obj.setCoords();
+              canvas.requestRenderAll();
+            },
+          });
+        } else {
+          util.animate({
+            from: 0,
+            to: args.opacity ?? 1,
+            duration: 250,
+            ease: util.ease.easeOutCubic,
+            onChange: (val: number) => {
+              obj.set('opacity', val);
+              canvas.requestRenderAll();
+            },
+          });
+        }
+
         canvas.requestRenderAll();
         historyRef.current.push(JSON.stringify(canvas.toObject(['customId'])));
       }
@@ -247,30 +281,42 @@ export const CanvasPanel = forwardRef<CanvasPanelRef>((_props, ref) => {
       return canvas.getObjects().map((obj: any) => {
         let type = 'unknown';
         let size = 0;
+        let width: number | undefined;
+        let height: number | undefined;
 
         if (obj.type === 'circle' && obj.radius != null) {
           type = 'circle';
           size = obj.radius;
+          width = height = Math.round(size * 2);
         } else if (obj.type === 'rect') {
           type = (obj.width === obj.height) ? 'square' : 'rectangle';
           size = Math.max(obj.width || 0, obj.height || 0);
+          width = Math.round(obj.width || 0);
+          height = Math.round(obj.height || 0);
         } else if (obj.type === 'triangle') {
           type = 'triangle';
           size = Math.max(obj.width || 0, obj.height || 0);
+          width = Math.round(obj.width || 0);
+          height = Math.round(obj.height || 0);
         } else if (obj.type === 'ellipse') {
           type = 'ellipse';
           size = Math.max(obj.rx || 0, obj.ry || 0);
+          width = Math.round((obj.rx || 0) * 2);
+          height = Math.round((obj.ry || 0) * 2);
         } else if (obj.type === 'line') {
           type = 'line';
           size = Math.round(Math.sqrt(
             Math.pow((obj.x2 || 0) - (obj.x1 || 0), 2) +
             Math.pow((obj.y2 || 0) - (obj.y1 || 0), 2)
           ));
+          width = Math.round(Math.abs((obj.x2 || 0) - (obj.x1 || 0)));
+          height = Math.round(Math.abs((obj.y2 || 0) - (obj.y1 || 0)));
         } else if (obj.type === 'polygon') {
           type = 'star';
           size = Math.round(Math.max(
             ...(obj.points || []).map((p: { x: number; y: number }) => Math.sqrt(p.x * p.x + p.y * p.y))
           ));
+          width = height = size * 2;
         }
 
         return {
@@ -280,6 +326,8 @@ export const CanvasPanel = forwardRef<CanvasPanelRef>((_props, ref) => {
           x: Math.round((obj.left / w) * 800),
           y: Math.round((obj.top / h) * 600),
           size: Math.round(size),
+          width: width ? Math.round(width) : undefined,
+          height: height ? Math.round(height) : undefined,
           group_id: obj.groupId || undefined,
         };
       });
@@ -287,6 +335,83 @@ export const CanvasPanel = forwardRef<CanvasPanelRef>((_props, ref) => {
 
     getObjectCount: (): number => {
       return canvasRef.current?.getObjects().length ?? 0;
+    },
+
+    getCanvasSize: () => sizeRef.current,
+
+    getLargestShape: (): CanvasObjectInfo | null => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const objects = canvas.getObjects();
+      if (objects.length === 0) return null;
+
+      const getArea = (obj: any): number => {
+        if (obj.type === 'circle') return Math.PI * Math.pow(obj.radius || 0, 2);
+        if (obj.type === 'rect' || obj.type === 'triangle') return (obj.width || 0) * (obj.height || 0);
+        if (obj.type === 'ellipse') return Math.PI * (obj.rx || 0) * (obj.ry || 0);
+        if (obj.type === 'line') return 0;
+        if (obj.type === 'polygon') {
+          const pts = obj.points || [];
+          const maxR = Math.max(...pts.map((p: any) => Math.sqrt(p.x * p.x + p.y * p.y)));
+          return Math.PI * Math.pow(maxR, 2) * 0.5;
+        }
+        return 0;
+      };
+
+      let largest = objects[0];
+      let maxArea = getArea(largest);
+      for (const obj of objects) {
+        const area = getArea(obj);
+        if (area > maxArea) { largest = obj; maxArea = area; }
+      }
+
+      const state = this.getCanvasState();
+      return state.find((s) => s.id === (largest as any).customId) || null;
+    },
+
+    getSmallestShape: (): CanvasObjectInfo | null => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const objects = canvas.getObjects();
+      if (objects.length === 0) return null;
+
+      const getArea = (obj: any): number => {
+        if (obj.type === 'circle') return Math.PI * Math.pow(obj.radius || 0, 2);
+        if (obj.type === 'rect' || obj.type === 'triangle') return (obj.width || 0) * (obj.height || 0);
+        if (obj.type === 'ellipse') return Math.PI * (obj.rx || 0) * (obj.ry || 0);
+        if (obj.type === 'line') return 0;
+        if (obj.type === 'polygon') {
+          const pts = obj.points || [];
+          const maxR = Math.max(...pts.map((p: any) => Math.sqrt(p.x * p.x + p.y * p.y)));
+          return Math.PI * Math.pow(maxR, 2) * 0.5;
+        }
+        return 0;
+      };
+
+      let smallest = objects[0];
+      let minArea = getArea(smallest);
+      for (const obj of objects) {
+        const area = getArea(obj);
+        if (area < minArea) { smallest = obj; minArea = area; }
+      }
+
+      const state = this.getCanvasState();
+      return state.find((s) => s.id === (smallest as any).customId) || null;
+    },
+
+    getShapesByType: (type: string): CanvasObjectInfo[] => {
+      const canvas = canvasRef.current;
+      if (!canvas) return [];
+      const state = this.getCanvasState();
+
+      const typeMap: Record<string, string> = {
+        圆形: 'circle', 矩形: 'rectangle', 正方形: 'square',
+        三角形: 'triangle', 椭圆: 'ellipse', 线段: 'line', 五角星: 'star',
+        circle: 'circle', rectangle: 'rectangle', square: 'square',
+        triangle: 'triangle', ellipse: 'ellipse', line: 'line', star: 'star',
+      };
+      const targetType = typeMap[type.toLowerCase()] || type;
+      return state.filter((s) => s.type === targetType);
     },
 
     getCanvasJSON: () => {
